@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="LexNav">
+  <rect width="64" height="64" rx="16" fill="#0C1E2C"/>
+  <path d="M10 32L32 26.4L54 32L32 37.6Z" fill="#F3EBE0"/>
+  <path d="M32 54L26.4 32H37.6Z" fill="#F3EBE0"/>
+  <path d="M32 8L24.8 32H39.2Z" fill="#FF5E3A"/>
+  <circle cx="32" cy="32" r="5" fill="#0C1E2C"/>
+  <circle cx="32" cy="32" r="2.6" fill="#FF5E3A"/>
+</svg>

@@ -1,0 +1,27 @@
+# LexNav Backend Dependencies
+# Powered natively by Google Gemini & Google Cloud — zero local model weights
+
+# Web framework & real-time streaming
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.20
+sse-starlette>=2.2.0
+
+# Google Gemini & Google Cloud AI
+google-genai>=2.0.0
+
+# Ephemeral vector store (in-memory)
+chromadb>=0.5.0
+
+# Document parsing & structure extraction
+pypdf>=5.0.0
+python-docx>=1.1.0
+
+# Data validation & configuration
+pydantic>=2.10.0
+pydantic-settings>=2.8.0
+
+# Testing & QA validation
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+httpx>=0.28.0
