@@ -17,7 +17,7 @@ import uuid
 from typing import Any
 
 from app.config import settings
-from app.models.session import Session
+from app.models.session import Session, DocumentInfo
 
 logger = logging.getLogger(__name__)
 

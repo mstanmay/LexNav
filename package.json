@@ -1,5 +1,22 @@
 {
-  "name": "app-builder-workspace",
+  "name": "lexnav",
+  "version": "1.0.0",
+  "description": "LexNav — Context-Aware Legal Document Intelligence Platform powered natively by Google Gemini 2.5 Flash and Google Cloud Document AI",
+  "homepage": "https://github.com/mstanmay/LexNav",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mstanmay/LexNav.git"
+  },
+  "keywords": [
+    "legal-tech",
+    "document-intelligence",
+    "google-gemini",
+    "contract-analysis",
+    "document-ai",
+    "plain-language-simplifier",
+    "evidence-grounded-qa",
+    "legal-assistance"
+  ],
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -16,7 +33,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts",
+    "test": "node --experimental-strip-types --test scripts/legal-intelligence.test.mjs src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

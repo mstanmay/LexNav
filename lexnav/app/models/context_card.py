@@ -31,7 +31,7 @@ class ContextCard(BaseModel):
         description="Type of legal issue",
         examples=["lease-dispute", "employment-contract", "privacy-policy"],
     )
-    urgency: Literal["low", "medium", "high"] = Field(
+    urgency: Literal["low", "medium", "high", "critical", "urgent"] = Field(
         default="medium",
         description="How urgent the user's situation is",
     )

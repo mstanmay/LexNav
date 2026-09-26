@@ -36,9 +36,9 @@ class Settings(BaseSettings):
     session_reaper_interval_seconds: int = Field(default=60, description="Session reaper interval")
 
     # Rate Limiting
-    rate_limit_per_minute: int = Field(default=20, description="General rate limit per session")
-    analyze_rate_limit_per_minute: int = Field(default=5, description="Analyze endpoint rate limit")
-    max_concurrent_sessions_per_ip: int = Field(default=3, description="Max sessions per IP")
+    rate_limit_per_minute: int = Field(default=500, description="General rate limit per session")
+    analyze_rate_limit_per_minute: int = Field(default=200, description="Analyze endpoint rate limit")
+    max_concurrent_sessions_per_ip: int = Field(default=50, description="Max sessions per IP")
 
     # CORS
     cors_origins: str = Field(default="*", description="Comma-separated CORS origins")
