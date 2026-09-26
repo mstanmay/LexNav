@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useId, useRef, useEffect, type ChangeEvent } from "react";
+import { useState, useId, useRef, useEffect, type ChangeEvent, type ReactNode } from "react";
 import {
   FileText,
   GitCompare,
@@ -14,23 +14,21 @@ import {
   Check,
   Trash2,
   UploadCloud,
-  Languages,
-  ChevronRight,
-  Info,
-  Sparkles,
-  ArrowRight,
-  FileSearch,
-  HelpCircle,
   Eye,
   Printer,
   X,
   FileCheck,
   Building2,
   UserCheck,
+  Sparkles,
+  Info,
+  HelpCircle,
+  FileSearch,
+  ArrowRight,
 } from "lucide-react";
 import { LexNavMark, LexNavWordmark } from "@/components/logo";
 
-export const Route = createFileRoute("/")({ component: LexNavDashboard });
+export const Route = createFileRoute("/")({ component: LexNavApp });
 
 /* -------------------------------------------------------------------------- */
 /* TYPES & DATA MODELS                                                        */
@@ -89,7 +87,7 @@ export interface QaItem {
 }
 
 /* -------------------------------------------------------------------------- */
-/* REALISTIC LEGAL DOCUMENTS DATASET                                          */
+/* PRELOADED LEGAL DATASET                                                    */
 /* -------------------------------------------------------------------------- */
 
 const PRELOADED_DOCS = {
@@ -144,7 +142,7 @@ const PRELOADED_DOCS = {
         verbatimQuote:
           "Landlord and its authorized contractors reserve the unrestricted right to enter the Leased Premises at any hour, without prior written or oral notice, for purposes of general inspection, repair, or showing to prospective buyers or tenants.",
         plainEnglishSummary:
-          "The landlord says they can walk into your apartment at any time without giving you notice. Under California Civil Code § 1954, landlords generally must give at least 24 hours written notice except during an active emergency.",
+          "The landlord claims they can walk into your apartment at any time without giving notice. Under California Civil Code § 1954, landlords generally must give at least 24 hours written notice except during an active emergency.",
         obligations: [
           { party: "Tenant", action: "Grant immediate entry at any hour", strictness: "mandatory" },
           { party: "Landlord", action: "None specified prior to entry", strictness: "discretionary" },
@@ -422,10 +420,6 @@ const PRELOADED_DOCS = {
   },
 };
 
-/* -------------------------------------------------------------------------- */
-/* MULTI-DOCUMENT COMPARISON MATRIX                                            */
-/* -------------------------------------------------------------------------- */
-
 const COMPARISON_DATA: DocumentComparisonItem[] = [
   {
     id: "cmp-1",
@@ -461,10 +455,6 @@ const COMPARISON_DATA: DocumentComparisonItem[] = [
     implication: "The notice conflates a temporary guest visit with a commercial subletting transaction to justify expedited eviction.",
   },
 ];
-
-/* -------------------------------------------------------------------------- */
-/* GROUNDED Q&A DATABASE WITH PRESET KNOWLEDGE & CITATIONS                    */
-/* -------------------------------------------------------------------------- */
 
 const PRESET_QA: QaItem[] = [
   {
@@ -513,31 +503,67 @@ const PRESET_QA: QaItem[] = [
   },
 ];
 
+const samples = [
+  "I received a 15-day eviction notice as a tenant in Maharashtra.",
+  "Compare this freelance contract with a standard services agreement.",
+  "Highlight risks in this SaaS terms of service.",
+];
+
+const faqs = [
+  {
+    q: "Is LexNav a substitute for a lawyer?",
+    a: "No. LexNav explains documents and helps you prepare questions. It does not give legal advice and should not replace a qualified professional.",
+  },
+  {
+    q: "What can I upload?",
+    a: "Contracts, notices, policies, employment documents, and rental agreements. Upload PDF, DOCX, or text files.",
+  },
+  {
+    q: "How is this different from a generic chatbot?",
+    a: "LexNav starts from your situation — role, jurisdiction, urgency — then chooses simplify, compare, risk scan, or a lawyer-ready brief with verifiable citations.",
+  },
+  {
+    q: "Is my data stored?",
+    a: "Analyses stay in this ephemeral session only (TTL auto-cleanup). Zero long-term document or vector persistence.",
+  },
+];
+
 /* -------------------------------------------------------------------------- */
 /* MAIN COMPONENT                                                             */
 /* -------------------------------------------------------------------------- */
 
-function LexNavDashboard() {
+function LexNavApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputId = useId();
 
-  // Navigation & User State
+  // Landing Page Interactive State
+  const [prompt, setPrompt] = useState(samples[0]);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [ran, setRan] = useState(true); // Default to showing dashboard when launched
+
+  // Dashboard Tab State
   const [activeTab, setActiveTab] = useState<
     "overview" | "risks" | "timeline" | "compare" | "qa" | "actions" | "brief"
   >("overview");
+
+  // Context State
   const [userRole, setUserRole] = useState<string>("tenant");
-  const [jurisdiction, setJurisdiction] = useState<string>("US-CA");
+  const [jurisdiction, setJurisdiction] = useState<string>("IN-MH");
   const [urgency, setUrgency] = useState<string>("critical");
   const [language, setLanguage] = useState<string>("en");
 
-  // Selected Documents
-  const [activeDocKey, setActiveDocKey] = useState<"lease" | "notice" | "freelance">("lease");
+  // Active Document Key
+  const [activeDocKey, setActiveDocKey] = useState<"lease" | "notice" | "freelance">("notice");
   const [customFile, setCustomFile] = useState<{
     name: string;
     text: string;
     wordCount: number;
     pages: number;
   } | null>(null);
+
+  // Backend API Integration State
+  const [backendStatus, setBackendStatus] = useState<"connecting" | "online" | "offline">("connecting");
+  const [backendSessionId, setBackendSessionId] = useState<string | null>(null);
 
   // Q&A State
   const [qaQuery, setQaQuery] = useState("");
@@ -550,11 +576,16 @@ function LexNavDashboard() {
     quote: string;
   } | null>(null);
 
-  // Backend API Integration State
-  const [backendStatus, setBackendStatus] = useState<"connecting" | "online" | "offline">("connecting");
-  const [backendSessionId, setBackendSessionId] = useState<string | null>(null);
+  // Checklist state
+  const [completedActions, setCompletedActions] = useState<Record<string, boolean>>({});
 
-  // Probe FastAPI Backend on Mount
+  // Feedback states
+  const [copiedBrief, setCopiedBrief] = useState(false);
+  const [sessionNotification, setSessionNotification] = useState<string | null>(null);
+
+  const currentDoc = PRELOADED_DOCS[activeDocKey];
+
+  // Probe Backend on Mount
   useEffect(() => {
     let isMounted = true;
     async function initBackend() {
@@ -584,23 +615,33 @@ function LexNavDashboard() {
     };
   }, []);
 
-  // Action Checkbox states
-  const [completedActions, setCompletedActions] = useState<Record<string, boolean>>({});
+  // Update doc selection when prompt changes
+  const handleSelectSamplePrompt = (sampleText: string) => {
+    setPrompt(sampleText);
+    if (sampleText.includes("eviction") || sampleText.includes("tenant")) {
+      setActiveDocKey("notice");
+      setUserRole("tenant");
+      setJurisdiction("IN-MH");
+      setUrgency("critical");
+    } else if (sampleText.includes("freelance") || sampleText.includes("services")) {
+      setActiveDocKey("freelance");
+      setUserRole("freelancer");
+      setJurisdiction("COMMON-LAW");
+      setUrgency("medium");
+    } else {
+      setActiveDocKey("lease");
+      setUserRole("consumer");
+      setJurisdiction("US-CA");
+      setUrgency("medium");
+    }
+    setRan(true);
+  };
 
-  // Feedback states
-  const [copiedBrief, setCopiedBrief] = useState(false);
-  const [sessionActive, setSessionActive] = useState(true);
-  const [sessionNotification, setSessionNotification] = useState<string | null>(null);
-
-  // Active Document Object
-  const currentDoc = PRELOADED_DOCS[activeDocKey];
-
-  // Handle Custom File Upload (Drag & Drop or File Input)
+  // Custom File Upload
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Optional background ingestion to FastAPI if active
     if (backendSessionId && backendStatus === "online") {
       const formData = new FormData();
       formData.append("file", file);
@@ -622,11 +663,12 @@ function LexNavDashboard() {
       });
       setSessionNotification(`Successfully ingested ${file.name} via Google Cloud Document AI.`);
       setTimeout(() => setSessionNotification(null), 4000);
+      setRan(true);
     };
     reader.readAsText(file);
   };
 
-  // Reset / Ephemeral Purge
+  // Ephemeral Purge
   const handlePurgeSession = () => {
     if (backendSessionId && backendStatus === "online") {
       fetch(`/api/v1/sessions/${backendSessionId}`, { method: "DELETE" }).catch(() => {});
@@ -634,15 +676,11 @@ function LexNavDashboard() {
     setCustomFile(null);
     setQaQuery("");
     setCompletedActions({});
-    setSessionActive(false);
     setSessionNotification("Session memory, parsed vectors, and cached artifacts purged completely.");
-    setTimeout(() => {
-      setSessionActive(true);
-      setSessionNotification(null);
-    }, 2500);
+    setTimeout(() => setSessionNotification(null), 3000);
   };
 
-  // Handle Q&A Submission
+  // Q&A submission
   const handleAskQuestion = (e: React.FormEvent) => {
     e.preventDefault();
     if (!qaQuery.trim()) return;
@@ -659,7 +697,6 @@ function LexNavDashboard() {
     } else if (qLower.includes("pet") || qLower.includes("dog") || qLower.includes("cat")) {
       matchedItem = PRESET_QA[3];
     } else {
-      // Dynamic Search across active clauses
       const foundClause = currentDoc.clauses.find(
         (c) =>
           c.title.toLowerCase().includes(qLower) ||
@@ -682,7 +719,7 @@ function LexNavDashboard() {
           id: `qa-${Date.now()}`,
           question: qaQuery,
           answer:
-            "Insufficient Document Evidence: The uploaded document text does not contain explicit provisions addressing this specific question. Please refer directly to counsel or request clarification from the counterparty.",
+            "Insufficient Document Evidence: The uploaded document text does not contain explicit provisions addressing this specific question. Please refer directly to counsel.",
           docName: currentDoc.name,
           section: "No Matching Clause Found",
           page: 0,
@@ -698,7 +735,6 @@ function LexNavDashboard() {
     }
   };
 
-  // Copy Brief to Clipboard
   const handleCopyBrief = () => {
     const briefText = `LEXNAV LAWYER-READY CONSULTATION BRIEF
 Generated: September 26, 2026 | Session: Ephemeral Google Gemini 2.5 Flash
@@ -735,9 +771,9 @@ LexNav provides document intelligence and consultation preparation tools for inf
   };
 
   return (
-    <main className="min-h-screen bg-paper text-ink pb-20">
+    <main className="min-h-screen bg-paper text-ink">
       {/* -------------------------------------------------------------------- */}
-      {/* TOP NOTIFICATION BANNER                                              */}
+      {/* NOTIFICATION TOAST                                                   */}
       {/* -------------------------------------------------------------------- */}
       {sessionNotification ? (
         <aside
@@ -761,516 +797,437 @@ LexNav provides document intelligence and consultation preparation tools for inf
       ) : null}
 
       {/* -------------------------------------------------------------------- */}
-      {/* APP HEADER                                                           */}
+      {/* ORIGINAL HEADER                                                      */}
       {/* -------------------------------------------------------------------- */}
-      <header className="sticky top-0 z-40 border-b border-line bg-paper/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6">
-          <div className="flex items-center gap-3">
-            <a href="#dashboard" aria-label="LexNav Home">
-              <LexNavWordmark />
+      <header className="sticky top-0 z-40 border-b border-line/80 bg-paper/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
+          <a href="#top" className="scale-95" aria-label="LexNav home">
+            <LexNavWordmark />
+          </a>
+          <nav className="hidden items-center gap-7 text-sm font-medium text-muted md:flex">
+            <a className="hover:text-ink transition-colors" href="#features">
+              Product
             </a>
-            {backendStatus === "online" ? (
-              <span className="hidden rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-800 sm:inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                FastAPI Backend Connected (Port 8000) · Gemini Active
-              </span>
-            ) : (
-              <span className="hidden rounded-full border border-line bg-cream px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted sm:inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                Gemini 2.5 Flash Engine Active
-              </span>
-            )}
-          </div>
-
+            <a className="hover:text-ink transition-colors" href="#how">
+              How it works
+            </a>
+            <a className="hover:text-ink transition-colors" href="#dashboard">
+              Dashboard
+            </a>
+            <a className="hover:text-ink transition-colors" href="#faq">
+              FAQ
+            </a>
+          </nav>
           <div className="flex items-center gap-3">
-            <span className="hidden items-center gap-1.5 text-xs text-muted md:flex">
-              <ShieldAlert className="size-3.5 text-coral" />
-              <span>Informational Only · Not Legal Advice</span>
-            </span>
-
-            <button
-              type="button"
-              onClick={handlePurgeSession}
-              title="Purge session memory and all uploaded documents immediately"
-              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-3 py-1.5 text-xs font-medium text-muted hover:border-coral hover:text-coral transition-colors"
+            {backendStatus === "online" ? (
+              <span className="hidden rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-800 lg:inline-flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                FastAPI Connected (:8000)
+              </span>
+            ) : null}
+            <a
+              href="#dashboard"
+              className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper transition hover:bg-ink-soft shadow-xs"
             >
-              <Trash2 className="size-3.5" />
-              <span className="hidden sm:inline">Purge Session</span>
-            </button>
+              Try LexNav
+            </a>
           </div>
         </div>
       </header>
 
       {/* -------------------------------------------------------------------- */}
-      {/* HERO & CONTEXT ONBOARDING BAR                                        */}
+      {/* ORIGINAL HERO SECTION                                                */}
       {/* -------------------------------------------------------------------- */}
-      <section className="border-b border-line bg-cream/50 px-4 py-8 sm:px-6 lg:py-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-coral">
-                <Sparkles className="size-3.5" />
-                Legal Document Intelligence & Consultation Prep
-              </p>
-              <h1 className="mt-2 font-serif text-3xl font-medium tracking-tight sm:text-5xl text-ink">
-                Understand the clauses. Trace the evidence. Prepare for counsel.
-              </h1>
-              <p className="mt-2 text-sm text-muted max-w-3xl leading-relaxed">
-                LexNav analyzes dense contracts, highlights risks and conflicting obligations, generates chronological
-                timelines, and drafts lawyer-ready consultation briefs with verifiable source citations.
-              </p>
-            </div>
+      <section id="top" className="mx-auto max-w-4xl px-5 pb-8 pt-16 text-center sm:pt-24">
+        <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-cream px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-muted shadow-2xs">
+          <LexNavMark className="size-5" />
+          AI for legal access
+        </p>
+        <h1 className="font-serif text-4xl leading-tight tracking-tight sm:text-6xl text-ink">
+          Understand any legal
+          <br />
+          document in plain language.
+        </h1>
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted sm:text-lg">
+          LexNav simplifies, compares, and flags risks in contracts and notices — so you can see options and prepare for a lawyer. Not legal advice.
+        </p>
+      </section>
 
-            {/* Google Stack Badges */}
-            <div className="flex flex-wrap gap-2 text-[11px] text-muted">
-              <span className="rounded-md border border-line bg-paper px-2.5 py-1 font-mono">
-                Google Cloud Document AI
-              </span>
-              <span className="rounded-md border border-line bg-paper px-2.5 py-1 font-mono">
-                Google Cloud Translation
-              </span>
-              <span className="rounded-md border border-line bg-paper px-2.5 py-1 font-mono">
-                Ephemeral GCS Memory
-              </span>
+      {/* -------------------------------------------------------------------- */}
+      {/* ORIGINAL INTERACTIVE INPUT BOX                                       */}
+      {/* -------------------------------------------------------------------- */}
+      <section id="demo" className="mx-auto max-w-3xl px-5 pb-16">
+        <div className="rounded-xl border border-line bg-cream p-4 shadow-sm sm:p-5">
+          <label htmlFor="situation" className="sr-only">
+            Describe your situation
+          </label>
+          <textarea
+            id="situation"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            rows={3}
+            className="w-full resize-none bg-transparent text-base leading-relaxed text-ink outline-none placeholder:text-muted"
+            placeholder="Describe the document or situation…"
+          />
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+            <p className="text-xs text-muted">Session only. Never stored.</p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRan(true);
+                  const el = document.getElementById("dashboard");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="rounded-full bg-coral px-5 py-2 text-sm font-semibold text-paper transition hover:opacity-90 shadow-xs cursor-pointer"
+              >
+                Analyze Document
+              </button>
             </div>
           </div>
+        </div>
 
-          {/* Context Control Strip */}
-          <div className="mt-6 rounded-xl border border-line bg-paper p-4 shadow-xs sm:p-5">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-muted mb-3 flex items-center gap-1.5">
-              <UserCheck className="size-3.5 text-coral" />
-              Your Legal Context & Matter Parameters
-            </h2>
+        {/* Suggestion Chips */}
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          {samples.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => handleSelectSamplePrompt(s)}
+              className="rounded-full border border-line bg-paper px-3 py-1.5 text-left text-xs text-muted hover:border-ink hover:text-ink transition-colors cursor-pointer"
+            >
+              {s.length > 42 ? `${s.slice(0, 42)}…` : s}
+            </button>
+          ))}
+        </div>
+      </section>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {/* Role */}
+      {/* -------------------------------------------------------------------- */}
+      {/* FULL LEXNAV INTELLIGENCE DASHBOARD (INTEGRATED)                      */}
+      {/* -------------------------------------------------------------------- */}
+      <section id="dashboard" className="border-t border-b border-line bg-cream/30 py-12 px-4 sm:px-6">
+        <div className="mx-auto max-w-6xl">
+          {/* Dashboard Header Bar */}
+          <div className="rounded-2xl border border-line bg-paper p-6 shadow-sm mb-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-line pb-5">
               <div>
-                <label htmlFor="user-role-select" className="block text-xs font-semibold text-ink mb-1">
+                <span className="text-xs font-bold uppercase tracking-[0.2em] text-coral flex items-center gap-1.5">
+                  <Sparkles className="size-3.5" />
+                  Legal Document Intelligence Studio
+                </span>
+                <h2 className="mt-1 font-serif text-3xl font-medium tracking-tight text-ink">
+                  Analysis, Timeline & Evidence
+                </h2>
+                <p className="mt-1 text-xs text-muted">
+                  Powered by Google Gemini 2.5 Flash & Google Cloud. Grounded in source text with quotation safeguards.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePurgeSession}
+                  title="Purge session memory and all uploaded documents immediately"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-3 py-1.5 text-xs font-semibold text-muted hover:border-coral hover:text-coral transition-colors cursor-pointer"
+                >
+                  <Trash2 className="size-3.5" />
+                  <span>Purge Session Memory</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Matter Context Strip */}
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label htmlFor="role-sel" className="block text-xs font-semibold text-ink mb-1">
                   Your Role
                 </label>
                 <select
-                  id="user-role-select"
+                  id="role-sel"
                   value={userRole}
                   onChange={(e) => setUserRole(e.target.value)}
-                  className="w-full rounded-lg border border-line bg-cream px-3 py-2 text-xs font-medium text-ink focus:outline-coral"
+                  className="w-full rounded-lg border border-line bg-cream px-3 py-2 text-xs font-medium text-ink focus:outline-coral cursor-pointer"
                 >
-                  <option value="tenant">Tenant (Residential/Commercial)</option>
-                  <option value="freelancer">Independent Contractor / Freelancer</option>
+                  <option value="tenant">Tenant (Residential)</option>
+                  <option value="freelancer">Independent Contractor</option>
                   <option value="consumer">Consumer / Policy Holder</option>
-                  <option value="employee">Employee / Contractor</option>
+                  <option value="employee">Employee / Staff</option>
                   <option value="business">Small Business Owner</option>
                 </select>
               </div>
 
-              {/* Jurisdiction */}
               <div>
-                <label htmlFor="jurisdiction-select" className="block text-xs font-semibold text-ink mb-1">
-                  Governing Jurisdiction
+                <label htmlFor="jurisdiction-sel" className="block text-xs font-semibold text-ink mb-1">
+                  Jurisdiction
                 </label>
                 <select
-                  id="jurisdiction-select"
+                  id="jurisdiction-sel"
                   value={jurisdiction}
                   onChange={(e) => setJurisdiction(e.target.value)}
-                  className="w-full rounded-lg border border-line bg-cream px-3 py-2 text-xs font-medium text-ink focus:outline-coral"
+                  className="w-full rounded-lg border border-line bg-cream px-3 py-2 text-xs font-medium text-ink focus:outline-coral cursor-pointer"
                 >
-                  <option value="US-CA">California, USA (Civil Code / Tenancy)</option>
-                  <option value="US-NY">New York, USA (Tenancy / Commercial)</option>
                   <option value="IN-MH">Maharashtra, India (Rent Control Act)</option>
+                  <option value="US-CA">California, USA (Civil Code § 1954)</option>
+                  <option value="US-NY">New York, USA (Tenancy Code)</option>
                   <option value="UK-ENG">England & Wales, UK (Housing Act)</option>
-                  <option value="COMMON-LAW">General Common Law Contract</option>
+                  <option value="COMMON-LAW">General Common Law</option>
                 </select>
               </div>
 
-              {/* Urgency */}
               <div>
-                <label htmlFor="urgency-select" className="block text-xs font-semibold text-ink mb-1">
+                <label htmlFor="urgency-sel" className="block text-xs font-semibold text-ink mb-1">
                   Notice Urgency
                 </label>
                 <select
-                  id="urgency-select"
+                  id="urgency-sel"
                   value={urgency}
                   onChange={(e) => setUrgency(e.target.value)}
-                  className="w-full rounded-lg border border-line bg-cream px-3 py-2 text-xs font-medium text-ink focus:outline-coral"
+                  className="w-full rounded-lg border border-line bg-cream px-3 py-2 text-xs font-medium text-ink focus:outline-coral cursor-pointer"
                 >
-                  <option value="critical">Critical (Notice to Quit / &lt;15 Days)</option>
-                  <option value="medium">Standard Review / Pre-Signature</option>
-                  <option value="low">Informational / General Audit</option>
+                  <option value="critical">Critical (&lt;15 Days to Cure)</option>
+                  <option value="medium">Standard Contract Review</option>
+                  <option value="low">Informational Audit</option>
                 </select>
               </div>
 
-              {/* Translation Language */}
               <div>
-                <label htmlFor="language-select" className="block text-xs font-semibold text-ink mb-1 flex items-center justify-between">
-                  <span>Language</span>
-                  <span className="text-[10px] text-muted">Google Cloud Translation</span>
+                <label htmlFor="language-sel" className="block text-xs font-semibold text-ink mb-1">
+                  Language (Google Translation)
                 </label>
                 <select
-                  id="language-select"
+                  id="language-sel"
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
-                  className="w-full rounded-lg border border-line bg-cream px-3 py-2 text-xs font-medium text-ink focus:outline-coral"
+                  className="w-full rounded-lg border border-line bg-cream px-3 py-2 text-xs font-medium text-ink focus:outline-coral cursor-pointer"
                 >
-                  <option value="en">English (Original Document)</option>
+                  <option value="en">English (Original)</option>
                   <option value="es">Español (Traducción)</option>
                   <option value="hi">हिन्दी (अनुवाद)</option>
-                  <option value="fr">Français (Traduction)</option>
-                  <option value="de">Deutsch (Übersetzung)</option>
+                  <option value="fr">Français</option>
+                  <option value="de">Deutsch</option>
                 </select>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* -------------------------------------------------------------------- */}
-      {/* DOCUMENT SELECTOR & INGESTION STRIP                                  */}
-      {/* -------------------------------------------------------------------- */}
-      <section className="border-b border-line bg-paper px-4 py-5 sm:px-6">
-        <div className="mx-auto max-w-7xl flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-muted mr-1">Active Documents:</span>
+            {/* Document Selectors Strip */}
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line/70 pt-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-muted mr-1">Active Document:</span>
 
-            <button
-              type="button"
-              onClick={() => setActiveDocKey("lease")}
-              className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-all ${
-                activeDocKey === "lease"
-                  ? "border-ink bg-ink text-paper shadow-xs"
-                  : "border-line bg-cream text-ink hover:border-ink"
-              }`}
-            >
-              Residential Lease (Unit 4B)
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDocKey("notice")}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                    activeDocKey === "notice"
+                      ? "border-coral bg-coral text-paper shadow-xs"
+                      : "border-line bg-cream text-ink hover:border-coral"
+                  }`}
+                >
+                  15-Day Eviction Notice
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveDocKey("notice")}
-              className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-all ${
-                activeDocKey === "notice"
-                  ? "border-coral bg-coral text-paper shadow-xs"
-                  : "border-line bg-cream text-ink hover:border-coral"
-              }`}
-            >
-              15-Day Cure / Eviction Notice
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDocKey("lease")}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                    activeDocKey === "lease"
+                      ? "border-ink bg-ink text-paper shadow-xs"
+                      : "border-line bg-cream text-ink hover:border-ink"
+                  }`}
+                >
+                  Residential Lease (Unit 4B)
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveDocKey("freelance")}
-              className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-all ${
-                activeDocKey === "freelance"
-                  ? "border-ink bg-ink text-paper shadow-xs"
-                  : "border-line bg-cream text-ink hover:border-ink"
-              }`}
-            >
-              Freelance MSA Contract
-            </button>
-          </div>
-
-          {/* Upload Custom Document */}
-          <div className="flex items-center gap-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.docx,.txt,.md"
-              onChange={handleFileUpload}
-              className="sr-only"
-              id="file-upload-input"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 rounded-lg border border-dashed border-ink/40 bg-cream/60 px-4 py-2 text-xs font-semibold text-ink hover:border-ink hover:bg-cream transition-colors"
-            >
-              <UploadCloud className="size-4 text-coral" />
-              <span>Upload Custom Document (.PDF / .DOCX / .TXT)</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Active Doc Ingestion Metadata */}
-        <div className="mx-auto max-w-7xl mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-cream/40 px-4 py-2.5 text-xs text-muted">
-          <div className="flex items-center gap-3">
-            <FileText className="size-4 text-coral" />
-            <span className="font-semibold text-ink">{currentDoc.name}</span>
-            <span>•</span>
-            <span>{currentDoc.pages} Pages</span>
-            <span>•</span>
-            <span>{currentDoc.wordCount.toLocaleString()} Words</span>
-            <span>•</span>
-            <span className="text-emerald-700 font-medium">OCR Verified: {currentDoc.ocrEngine}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="size-2 rounded-full bg-emerald-500" />
-            <span>Ephemeral Session ID: <code className="font-mono text-[11px]">gcs-ephem-{activeDocKey}-ttl30m</code></span>
-          </div>
-        </div>
-      </section>
-
-      {/* -------------------------------------------------------------------- */}
-      {/* INTELLIGENCE TABS NAVIGATION                                         */}
-      {/* -------------------------------------------------------------------- */}
-      <nav
-        aria-label="Intelligence Views"
-        className="sticky top-[61px] z-30 border-b border-line bg-paper/95 backdrop-blur-md px-4 sm:px-6"
-      >
-        <div className="mx-auto max-w-7xl flex overflow-x-auto no-scrollbar gap-1 py-2">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "overview"}
-            onClick={() => setActiveTab("overview")}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-              activeTab === "overview"
-                ? "bg-ink text-paper"
-                : "text-muted hover:bg-cream hover:text-ink"
-            }`}
-          >
-            <FileCheck className="size-3.5" />
-            <span>1. Overview & Simplification</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "risks"}
-            onClick={() => setActiveTab("risks")}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-              activeTab === "risks"
-                ? "bg-ink text-paper"
-                : "text-muted hover:bg-cream hover:text-ink"
-            }`}
-          >
-            <ShieldAlert className="size-3.5 text-coral" />
-            <span>2. Clause Risk Radar ({currentDoc.clauses.length})</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "timeline"}
-            onClick={() => setActiveTab("timeline")}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-              activeTab === "timeline"
-                ? "bg-ink text-paper"
-                : "text-muted hover:bg-cream hover:text-ink"
-            }`}
-          >
-            <Clock className="size-3.5" />
-            <span>3. Deadlines & Timeline</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "compare"}
-            onClick={() => setActiveTab("compare")}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-              activeTab === "compare"
-                ? "bg-ink text-paper"
-                : "text-muted hover:bg-cream hover:text-ink"
-            }`}
-          >
-            <GitCompare className="size-3.5 text-coral" />
-            <span>4. Multi-Doc Comparison</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "qa"}
-            onClick={() => setActiveTab("qa")}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-              activeTab === "qa"
-                ? "bg-ink text-paper"
-                : "text-muted hover:bg-cream hover:text-ink"
-            }`}
-          >
-            <Search className="size-3.5" />
-            <span>5. Evidence-Grounded Q&A</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "actions"}
-            onClick={() => setActiveTab("actions")}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-              activeTab === "actions"
-                ? "bg-ink text-paper"
-                : "text-muted hover:bg-cream hover:text-ink"
-            }`}
-          >
-            <ListChecks className="size-3.5" />
-            <span>6. Action Options Checklist</span>
-          </button>
-
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "brief"}
-            onClick={() => setActiveTab("brief")}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-              activeTab === "brief"
-                ? "bg-coral text-paper shadow-xs"
-                : "text-coral font-bold hover:bg-coral/10"
-            }`}
-          >
-            <Scale className="size-3.5" />
-            <span>7. Lawyer-Ready Brief</span>
-          </button>
-        </div>
-      </nav>
-
-      {/* -------------------------------------------------------------------- */}
-      {/* MAIN TAB CONTENT CONTAINER                                           */}
-      {/* -------------------------------------------------------------------- */}
-      <div id="dashboard" className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        {/* ================================================================== */}
-        {/* TAB 1: OVERVIEW & SIMPLIFICATION                                   */}
-        {/* ================================================================== */}
-        {activeTab === "overview" && (
-          <section aria-labelledby="overview-heading" className="space-y-6">
-            <div className="rounded-xl border border-line bg-cream/70 p-6 sm:p-8">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-4">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-coral">
-                    Plain-Language Legal Simplification (8th-Grade Reading Target)
-                  </span>
-                  <h2 id="overview-heading" className="mt-1 font-serif text-2xl sm:text-3xl text-ink">
-                    Executive Document Synthesis
-                  </h2>
-                </div>
-                <div className="flex items-center gap-2 text-xs font-semibold text-muted">
-                  <Building2 className="size-4 text-ink" />
-                  <span>Governing: {currentDoc.jurisdiction}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveDocKey("freelance")}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                    activeDocKey === "freelance"
+                      ? "border-ink bg-ink text-paper shadow-xs"
+                      : "border-line bg-cream text-ink hover:border-ink"
+                  }`}
+                >
+                  Freelance MSA
+                </button>
               </div>
 
-              <p className="mt-4 text-sm sm:text-base leading-relaxed text-ink/90">
-                {currentDoc.summary}
-              </p>
+              {/* Upload Custom File */}
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md"
+                  onChange={handleFileUpload}
+                  className="sr-only"
+                  id="custom-file-upload"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-2 rounded-lg border border-dashed border-ink/40 bg-cream/70 px-3 py-1.5 text-xs font-semibold text-ink hover:border-ink hover:bg-cream transition-colors cursor-pointer"
+                >
+                  <UploadCloud className="size-3.5 text-coral" />
+                  <span>Upload .PDF / .DOCX / .TXT</span>
+                </button>
+              </div>
+            </div>
 
-              {/* Quick Metrics Cards */}
+            {/* Document OCR Info Line */}
+            <div className="mt-3 flex flex-wrap items-center justify-between text-xs text-muted">
+              <span>
+                <strong>{currentDoc.name}</strong> • {currentDoc.pages} Pages • {currentDoc.wordCount.toLocaleString()} Words • {currentDoc.ocrEngine}
+              </span>
+              <span className="font-mono text-[11px] text-emerald-800 font-semibold">
+                Ephemeral GCS Session ID: gcs-{activeDocKey}-ttl30m
+              </span>
+            </div>
+          </div>
+
+          {/* Tab Navigation Strip */}
+          <nav aria-label="Dashboard Intelligence Tabs" className="flex overflow-x-auto no-scrollbar gap-1.5 mb-6">
+            <button
+              type="button"
+              onClick={() => setActiveTab("overview")}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "overview"
+                  ? "bg-ink text-paper shadow-xs"
+                  : "bg-paper border border-line text-muted hover:border-ink hover:text-ink"
+              }`}
+            >
+              <FileCheck className="size-3.5" />
+              <span>1. Simplify Summary</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("risks")}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "risks"
+                  ? "bg-ink text-paper shadow-xs"
+                  : "bg-paper border border-line text-muted hover:border-ink hover:text-ink"
+              }`}
+            >
+              <ShieldAlert className="size-3.5 text-coral" />
+              <span>2. Risk Radar ({currentDoc.clauses.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("timeline")}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "timeline"
+                  ? "bg-ink text-paper shadow-xs"
+                  : "bg-paper border border-line text-muted hover:border-ink hover:text-ink"
+              }`}
+            >
+              <Clock className="size-3.5" />
+              <span>3. Deadlines & Timeline</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("compare")}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "compare"
+                  ? "bg-ink text-paper shadow-xs"
+                  : "bg-paper border border-line text-muted hover:border-ink hover:text-ink"
+              }`}
+            >
+              <GitCompare className="size-3.5 text-coral" />
+              <span>4. Multi-Doc Compare</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("qa")}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "qa"
+                  ? "bg-ink text-paper shadow-xs"
+                  : "bg-paper border border-line text-muted hover:border-ink hover:text-ink"
+              }`}
+            >
+              <Search className="size-3.5" />
+              <span>5. Grounded Q&A</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("actions")}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "actions"
+                  ? "bg-ink text-paper shadow-xs"
+                  : "bg-paper border border-line text-muted hover:border-ink hover:text-ink"
+              }`}
+            >
+              <ListChecks className="size-3.5" />
+              <span>6. Next Steps Checklist</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("brief")}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "brief"
+                  ? "bg-coral text-paper shadow-xs"
+                  : "bg-paper border border-coral/40 text-coral font-bold hover:bg-coral/10"
+              }`}
+            >
+              <Scale className="size-3.5" />
+              <span>7. Lawyer Brief</span>
+            </button>
+          </nav>
+
+          {/* TAB 1: OVERVIEW */}
+          {activeTab === "overview" && (
+            <article className="rounded-xl border border-line bg-paper p-6 sm:p-8 text-left shadow-xs">
+              <div className="flex justify-between items-start border-b border-line pb-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-coral">
+                    01 / Plain-English Simplification
+                  </p>
+                  <h3 className="mt-2 font-serif text-3xl font-medium text-ink">{currentDoc.name}</h3>
+                </div>
+                <span className="text-xs font-semibold text-muted bg-cream px-3 py-1 rounded-full border border-line">
+                  {currentDoc.jurisdiction}
+                </span>
+              </div>
+
+              <p className="mt-4 text-sm leading-relaxed text-muted sm:text-base">{currentDoc.summary}</p>
+
               <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div className="rounded-lg border border-line bg-paper p-4">
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted">
-                    <ShieldAlert className="size-4 text-coral" />
-                    <span>Risk Profile</span>
-                  </div>
+                <div className="rounded-lg border border-line bg-cream p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted">Risk Profile</p>
                   <p className="mt-2 text-2xl font-serif font-bold text-coral">
                     {currentDoc.clauses.filter((c) => c.risk === "high").length} High Risk Clauses
                   </p>
-                  <p className="mt-1 text-xs text-muted">
-                    Requires attorney consultation or clarification before agreement.
-                  </p>
+                  <p className="mt-1 text-xs text-muted">Requires legal clarification before signing or agreeing.</p>
                 </div>
-
-                <div className="rounded-lg border border-line bg-paper p-4">
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted">
-                    <Clock className="size-4 text-ink" />
-                    <span>Time Horizon</span>
-                  </div>
+                <div className="rounded-lg border border-line bg-cream p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted">Deadlines</p>
                   <p className="mt-2 text-2xl font-serif font-bold text-ink">
-                    {currentDoc.timeline.length} Key Deadlines
+                    {currentDoc.timeline.length} Key Dates
                   </p>
-                  <p className="mt-1 text-xs text-muted">
-                    Earliest deadline: {currentDoc.timeline[0]?.dateStr || "None"}
-                  </p>
+                  <p className="mt-1 text-xs text-muted">Earliest: {currentDoc.timeline[0]?.dateStr}</p>
                 </div>
-
-                <div className="rounded-lg border border-line bg-paper p-4">
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted">
-                    <Scale className="size-4 text-emerald-600" />
-                    <span>Evidence Grounding</span>
-                  </div>
-                  <p className="mt-2 text-2xl font-serif font-bold text-emerald-700">
-                    100% Verifiable
-                  </p>
-                  <p className="mt-1 text-xs text-muted">
-                    Every finding anchors to verbatim text with line-level quotes.
-                  </p>
+                <div className="rounded-lg border border-line bg-cream p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted">Grounding</p>
+                  <p className="mt-2 text-2xl font-serif font-bold text-emerald-700">100% Verifiable</p>
+                  <p className="mt-1 text-xs text-muted">Direct line-level quotations for every finding.</p>
                 </div>
               </div>
-            </div>
+            </article>
+          )}
 
-            {/* Side-by-Side Example Card */}
-            <div className="rounded-xl border border-line bg-paper p-6">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted mb-4">
-                Deep-Dive: Dense Legal Clause vs. LexNav Plain English
-              </h3>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <div className="rounded-lg border border-line bg-cream/40 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted mb-2 flex items-center gap-1.5">
-                    <FileText className="size-3.5 text-ink" />
-                    Verbatim Document Extract (Section 18.2)
-                  </p>
-                  <blockquote className="text-xs font-mono leading-relaxed text-ink/80 italic border-l-2 border-line pl-3">
-                    “Tenant agrees to defend, indemnify, and hold completely harmless Landlord, its agents, and
-                    affiliates from and against any and all claims, liabilities, lawsuits, or medical damages occurring
-                    on or about the Premises, even where attributable in part to Landlord’s deferred maintenance.”
-                  </blockquote>
-                </div>
-
-                <div className="rounded-lg border border-coral/30 bg-coral/5 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wider text-coral mb-2 flex items-center gap-1.5">
-                    <Sparkles className="size-3.5 text-coral" />
-                    LexNav Plain-English Translation
-                  </p>
-                  <p className="text-sm leading-relaxed text-ink font-medium">
-                    You are forced to take financial and legal responsibility for injuries or damages that happen on the
-                    property — even if they were caused by the landlord refusing to fix broken stairs or faulty wiring.
-                  </p>
-                  <div className="mt-3 flex items-center gap-2 text-xs text-coral font-bold">
-                    <ShieldAlert className="size-4" />
-                    <span>Flagged as Highly Disproportionate Liability Shift</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* ================================================================== */}
-        {/* TAB 2: CLAUSE RISK RADAR                                           */}
-        {/* ================================================================== */}
-        {activeTab === "risks" && (
-          <section aria-labelledby="risks-heading" className="space-y-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 id="risks-heading" className="font-serif text-2xl sm:text-3xl text-ink">
-                  Clause Risk Radar
-                </h2>
-                <p className="text-xs text-muted">
-                  Audited against {currentDoc.jurisdiction} legal standards. Direct quotations are preserved verbatim
-                  under advice protection guardrails.
-                </p>
-              </div>
-
-              {/* Legend with Icons & Labels (Non-Color Exclusive) */}
-              <div className="flex items-center gap-3 text-xs">
-                <span className="inline-flex items-center gap-1 font-semibold text-coral">
-                  <ShieldAlert className="size-3.5" /> High Risk
-                </span>
-                <span className="inline-flex items-center gap-1 font-semibold text-amber-700">
-                  <AlertTriangle className="size-3.5" /> Caution
-                </span>
-                <span className="inline-flex items-center gap-1 font-semibold text-muted">
-                  <Info className="size-3.5" /> Informational
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
+          {/* TAB 2: RISK RADAR */}
+          {activeTab === "risks" && (
+            <div className="space-y-4">
               {currentDoc.clauses.map((clause) => {
                 const isHigh = clause.risk === "high";
                 const isCaution = clause.risk === "caution";
-
                 return (
                   <article
                     key={clause.id}
-                    className={`rounded-xl border p-5 transition-shadow hover:shadow-sm ${
+                    className={`rounded-xl border p-5 shadow-xs transition-shadow ${
                       isHigh
                         ? "border-coral/40 bg-coral/5"
                         : isCaution
@@ -1278,39 +1235,24 @@ LexNav provides document intelligence and consultation preparation tools for inf
                         : "border-line bg-paper"
                     }`}
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {isHigh && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-coral px-2.5 py-0.5 text-[11px] font-bold text-paper">
-                              <ShieldAlert className="size-3" />
-                              HIGH RISK CLAUSE
-                            </span>
-                          )}
-                          {isCaution && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-200 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
-                              <AlertTriangle className="size-3" />
-                              CAUTION REQUIRED
-                            </span>
-                          )}
-                          {!isHigh && !isCaution && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-200 px-2.5 py-0.5 text-[11px] font-bold text-slate-800">
-                              <Info className="size-3" />
-                              INFORMATIONAL
-                            </span>
-                          )}
-
-                          <span className="font-mono text-xs font-bold text-ink">
-                            {clause.section}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2">
+                        {isHigh ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-coral px-2.5 py-0.5 text-[11px] font-bold text-paper">
+                            <ShieldAlert className="size-3" /> HIGH RISK
                           </span>
-                          <span className="text-xs text-muted">• Page {clause.page}</span>
-                        </div>
-
-                        <h3 className="mt-2 font-serif text-xl font-medium text-ink">
-                          {clause.title}
-                        </h3>
+                        ) : isCaution ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-200 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
+                            <AlertTriangle className="size-3" /> CAUTION
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-200 px-2.5 py-0.5 text-[11px] font-bold text-slate-800">
+                            <Info className="size-3" /> INFO
+                          </span>
+                        )}
+                        <span className="font-mono text-xs font-bold text-ink">{clause.section}</span>
+                        <span className="text-xs text-muted">• Page {clause.page}</span>
                       </div>
-
                       <button
                         type="button"
                         onClick={() =>
@@ -1322,340 +1264,147 @@ LexNav provides document intelligence and consultation preparation tools for inf
                             quote: clause.verbatimQuote,
                           })
                         }
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-paper px-3 py-1.5 text-xs font-semibold text-ink hover:border-ink"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-paper px-3 py-1 text-xs font-semibold text-ink hover:border-ink cursor-pointer"
                       >
                         <Eye className="size-3.5 text-coral" />
                         <span>View Source Quote</span>
                       </button>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                      {/* Plain-Language Explanation */}
-                      <div>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-1">
-                          Plain-English Meaning
-                        </h4>
-                        <p className="text-sm leading-relaxed text-ink/90">
-                          {clause.plainEnglishSummary}
-                        </p>
-                      </div>
+                    <h4 className="mt-2 font-serif text-xl font-medium text-ink">{clause.title}</h4>
+                    <p className="mt-2 text-sm leading-relaxed text-ink/90">{clause.plainEnglishSummary}</p>
 
-                      {/* Party Obligations */}
-                      <div className="rounded-lg border border-line/70 bg-cream/50 p-3">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-2">
-                          Contractual Obligations
-                        </h4>
-                        <ul className="space-y-1.5 text-xs">
-                          {clause.obligations.map((ob, idx) => (
-                            <li key={idx} className="flex items-start gap-2">
-                              <span className="font-semibold text-coral shrink-0">
-                                [{ob.party}]:
-                              </span>
-                              <span className="text-ink">{ob.action}</span>
-                              <span className="text-[10px] text-muted italic ml-auto shrink-0">
-                                ({ob.strictness})
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-
-                    {/* Verbatim Protected Quote */}
-                    <div className="mt-3 rounded-md bg-paper/80 border border-line/60 p-2.5 text-xs font-mono italic text-muted">
+                    <div className="mt-3 rounded-md bg-cream/70 border border-line/60 p-3 text-xs font-mono italic text-muted">
                       “{clause.verbatimQuote}”
                     </div>
                   </article>
                 );
               })}
             </div>
-          </section>
-        )}
+          )}
 
-        {/* ================================================================== */}
-        {/* TAB 3: TIMELINE & DEADLINES                                        */}
-        {/* ================================================================== */}
-        {activeTab === "timeline" && (
-          <section aria-labelledby="timeline-heading" className="space-y-6">
-            <div className="border-b border-line pb-4">
-              <h2 id="timeline-heading" className="font-serif text-2xl sm:text-3xl text-ink">
-                Chronological Deadlines & Procedural Timeline
-              </h2>
-              <p className="text-xs text-muted mt-1">
-                Extracted dates, cure windows, and statutory notice minimums mapped in chronological order.
-              </p>
-            </div>
-
-            <div className="relative border-l-2 border-line pl-6 ml-4 space-y-8">
-              {currentDoc.timeline.map((item, idx) => {
-                const isCritical = item.urgency === "critical";
-                const isWarning = item.urgency === "warning";
-
-                return (
-                  <div key={item.id} className="relative group">
-                    {/* Node Dot */}
+          {/* TAB 3: TIMELINE */}
+          {activeTab === "timeline" && (
+            <div className="rounded-xl border border-line bg-paper p-6 shadow-xs">
+              <h3 className="font-serif text-2xl font-bold text-ink mb-6">Chronological Procedural Timeline</h3>
+              <div className="relative border-l-2 border-line pl-6 ml-3 space-y-6">
+                {currentDoc.timeline.map((item) => (
+                  <div key={item.id} className="relative">
                     <div
                       className={`absolute -left-[31px] top-1.5 size-4 rounded-full border-2 border-paper ${
-                        isCritical
+                        item.urgency === "critical"
                           ? "bg-coral ring-4 ring-coral/20 animate-pulse"
-                          : isWarning
+                          : item.urgency === "warning"
                           ? "bg-amber-500"
                           : "bg-ink"
                       }`}
                     />
-
-                    <div className="rounded-xl border border-line bg-paper p-5 shadow-xs">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-serif text-xl font-bold text-ink">
-                            {item.dateStr}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                              isCritical
-                                ? "bg-coral text-paper"
-                                : isWarning
-                                ? "bg-amber-100 text-amber-900"
-                                : "bg-cream text-muted"
-                            }`}
-                          >
-                            {item.daysRemaining}
-                          </span>
-                        </div>
-
-                        <span className="text-xs text-muted font-mono">
-                          {item.sourceDoc} • {item.sourceSection}
+                    <div className="rounded-lg border border-line bg-cream/50 p-4">
+                      <div className="flex justify-between items-center">
+                        <span className="font-serif text-lg font-bold text-ink">{item.dateStr}</span>
+                        <span className="rounded-full bg-coral/10 text-coral px-2.5 py-0.5 text-xs font-bold">
+                          {item.daysRemaining}
                         </span>
                       </div>
-
-                      <h3 className="mt-2 text-base font-semibold text-ink">{item.title}</h3>
-                      <p className="mt-1 text-sm text-muted leading-relaxed">
-                        {item.description}
-                      </p>
+                      <h4 className="mt-1 text-sm font-semibold text-ink">{item.title}</h4>
+                      <p className="mt-1 text-xs text-muted">{item.description}</p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* ================================================================== */}
-        {/* TAB 4: MULTI-DOCUMENT COMPARISON                                   */}
-        {/* ================================================================== */}
-        {activeTab === "compare" && (
-          <section aria-labelledby="compare-heading" className="space-y-6">
-            <div className="border-b border-line pb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 id="compare-heading" className="font-serif text-2xl sm:text-3xl text-ink">
-                  Multi-Document Conflict Matrix
-                </h2>
-                <p className="text-xs text-muted mt-1">
-                  Cross-document comparison between Document A (Original Lease) and Document B (15-Day Eviction Notice).
-                </p>
+                ))}
               </div>
-
-              <span className="inline-flex items-center gap-1 rounded-md bg-coral/10 px-3 py-1 text-xs font-bold text-coral">
-                <AlertTriangle className="size-3.5" /> 3 Material Conflicts Detected
-              </span>
             </div>
+          )}
 
+          {/* TAB 4: MULTI-DOC COMPARE */}
+          {activeTab === "compare" && (
             <div className="space-y-4">
+              <div className="flex justify-between items-center rounded-lg bg-coral/10 border border-coral/20 p-4">
+                <span className="text-xs font-bold text-coral uppercase tracking-wider">
+                  Contractual Discrepancies: Original Lease vs. 15-Day Eviction Notice
+                </span>
+                <span className="text-xs font-bold text-coral">3 Direct Conflicts</span>
+              </div>
               {COMPARISON_DATA.map((row) => (
-                <div
-                  key={row.id}
-                  className="rounded-xl border border-line bg-paper p-5 transition-shadow hover:shadow-xs"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/60 pb-3">
-                    <h3 className="font-serif text-lg font-bold text-ink">{row.topic}</h3>
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-md bg-coral px-2.5 py-0.5 text-xs font-bold text-paper">
-                        {row.conflictType}
-                      </span>
-                      <span className="text-xs font-semibold text-coral uppercase">
-                        Severity: {row.severity}
-                      </span>
+                <div key={row.id} className="rounded-xl border border-line bg-paper p-5 shadow-xs">
+                  <div className="flex justify-between items-center border-b border-line pb-3">
+                    <h4 className="font-serif text-lg font-bold text-ink">{row.topic}</h4>
+                    <span className="rounded-md bg-coral px-2 py-0.5 text-xs font-bold text-paper">
+                      {row.conflictType}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="rounded-lg border border-line bg-cream p-3 text-xs">
+                      <span className="font-bold text-ink uppercase">Lease ({row.docAClause}):</span>
+                      <p className="mt-1 font-mono text-muted italic">“{row.docAText}”</p>
+                    </div>
+                    <div className="rounded-lg border border-coral/30 bg-coral/5 p-3 text-xs">
+                      <span className="font-bold text-coral uppercase">Notice ({row.docBClause}):</span>
+                      <p className="mt-1 font-mono text-ink italic">“{row.docBText}”</p>
                     </div>
                   </div>
-
-                  <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    {/* Document A */}
-                    <div className="rounded-lg border border-line bg-cream/40 p-4">
-                      <p className="text-xs font-bold text-ink uppercase tracking-wider mb-1">
-                        Document A: Residential Lease ({row.docAClause})
-                      </p>
-                      <p className="text-xs font-mono text-muted italic">“{row.docAText}”</p>
-                    </div>
-
-                    {/* Document B */}
-                    <div className="rounded-lg border border-coral/30 bg-coral/5 p-4">
-                      <p className="text-xs font-bold text-coral uppercase tracking-wider mb-1">
-                        Document B: Eviction Notice ({row.docBClause})
-                      </p>
-                      <p className="text-xs font-mono text-ink italic">“{row.docBText}”</p>
-                    </div>
-                  </div>
-
-                  {/* Legal Implication */}
-                  <div className="mt-3 flex items-start gap-2 rounded-md bg-cream/70 p-3 text-xs">
-                    <Info className="size-4 text-coral shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold text-ink">Analytical Takeaway: </span>
-                      <span className="text-muted">{row.implication}</span>
-                    </div>
-                  </div>
+                  <p className="mt-3 text-xs text-muted">
+                    <strong className="text-ink">Legal Implication:</strong> {row.implication}
+                  </p>
                 </div>
               ))}
             </div>
-          </section>
-        )}
+          )}
 
-        {/* ================================================================== */}
-        {/* TAB 5: EVIDENCE-GROUNDED Q&A                                       */}
-        {/* ================================================================== */}
-        {activeTab === "qa" && (
-          <section aria-labelledby="qa-heading" className="space-y-6">
-            <div className="border-b border-line pb-4">
-              <h2 id="qa-heading" className="font-serif text-2xl sm:text-3xl text-ink">
-                Evidence-Grounded Q&A
-              </h2>
-              <p className="text-xs text-muted mt-1">
-                Ask specific questions about the uploaded legal text. Every response provides citation metadata and
-                direct excerpts. If evidence is lacking, the system fails closed rather than hallucinating.
-              </p>
-            </div>
+          {/* TAB 5: GROUNDED Q&A */}
+          {activeTab === "qa" && (
+            <div className="space-y-5">
+              <form onSubmit={handleAskQuestion} className="rounded-xl border border-line bg-cream p-4 shadow-xs">
+                <label htmlFor={searchInputId} className="block text-xs font-bold uppercase tracking-wider text-muted mb-2">
+                  Ask Question Against Uploaded Document
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id={searchInputId}
+                    type="text"
+                    value={qaQuery}
+                    onChange={(e) => setQaQuery(e.target.value)}
+                    placeholder="e.g. Can the landlord enter without 24 hours notice?"
+                    className="flex-1 rounded-lg border border-line bg-paper px-4 py-2 text-sm text-ink focus:outline-coral"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-coral px-5 py-2 text-sm font-semibold text-paper hover:bg-coral/90 transition-colors cursor-pointer"
+                  >
+                    Ask
+                  </button>
+                </div>
+              </form>
 
-            {/* Question Input Form */}
-            <form onSubmit={handleAskQuestion} className="rounded-xl border border-line bg-cream p-4 shadow-xs">
-              <label htmlFor={searchInputId} className="block text-xs font-bold uppercase tracking-wider text-muted mb-2">
-                Ask Question Against Document Knowledge Base
-              </label>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  id={searchInputId}
-                  type="text"
-                  value={qaQuery}
-                  onChange={(e) => setQaQuery(e.target.value)}
-                  placeholder="e.g. Can the landlord enter without 24 hours notice?"
-                  className="flex-1 rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink focus:outline-coral"
-                />
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-coral px-5 py-2.5 text-sm font-semibold text-paper hover:bg-coral/90 transition-colors"
-                >
-                  <Search className="size-4" />
-                  <span>Ask LexNav</span>
-                </button>
-              </div>
-
-              {/* Sample Suggestion Chips */}
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-muted">Suggested prompts:</span>
-                <button
-                  type="button"
-                  onClick={() => setQaQuery("Can the landlord enter my home without 24 hours prior notice?")}
-                  className="rounded-full border border-line bg-paper px-2.5 py-1 text-muted hover:border-ink hover:text-ink"
-                >
-                  Notice for entry?
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQaQuery("What are the hard deadlines in the 15-day notice?")}
-                  className="rounded-full border border-line bg-paper px-2.5 py-1 text-muted hover:border-ink hover:text-ink"
-                >
-                  15-day notice deadlines?
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQaQuery("Does the freelance contract transfer copyright before I am paid?")}
-                  className="rounded-full border border-line bg-paper px-2.5 py-1 text-muted hover:border-ink hover:text-ink"
-                >
-                  IP transfer before pay?
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQaQuery("What is the pet deposit fee in the lease?")}
-                  className="rounded-full border border-line bg-paper px-2.5 py-1 text-coral hover:border-coral"
-                >
-                  Pet fee (Negative test)
-                </button>
-              </div>
-            </form>
-
-            {/* Q&A Thread List */}
-            <div className="space-y-4">
-              {qaList.map((item) => (
-                <article
-                  key={item.id}
-                  className={`rounded-xl border p-5 ${
-                    item.insufficientEvidence
-                      ? "border-amber-300 bg-amber-50/50"
-                      : "border-line bg-paper"
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <HelpCircle className="size-5 text-coral shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <h3 className="text-base font-bold text-ink">{item.question}</h3>
-                      <p className="mt-2 text-sm leading-relaxed text-ink/90">
-                        {item.answer}
-                      </p>
-
-                      {/* Evidence Drawer Anchor */}
-                      <div className="mt-4 rounded-lg border border-line bg-cream/40 p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="space-y-4">
+                {qaList.map((item) => (
+                  <article
+                    key={item.id}
+                    className={`rounded-xl border p-5 ${
+                      item.insufficientEvidence ? "border-amber-300 bg-amber-50/50" : "border-line bg-paper"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <HelpCircle className="size-5 text-coral shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <h4 className="text-base font-bold text-ink">{item.question}</h4>
+                        <p className="mt-2 text-sm leading-relaxed text-ink/90">{item.answer}</p>
+                        <div className="mt-3 rounded-lg border border-line bg-cream p-3 text-xs">
                           <span className="font-semibold text-coral flex items-center gap-1.5">
                             <FileSearch className="size-3.5" />
                             Citation: {item.docName} • {item.section} (Page {item.page})
                           </span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEvidenceModalItem({
-                                title: item.question,
-                                section: item.section,
-                                docName: item.docName,
-                                page: item.page,
-                                quote: item.verbatimEvidence,
-                              })
-                            }
-                            className="text-xs font-semibold text-ink underline hover:text-coral"
-                          >
-                            Inspect Verbatim Source Quote
-                          </button>
+                          <p className="mt-1 font-mono text-muted italic">{item.verbatimEvidence}</p>
                         </div>
-
-                        <p className="mt-2 text-xs font-mono text-muted italic">
-                          {item.verbatimEvidence}
-                        </p>
                       </div>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                ))}
+              </div>
             </div>
-          </section>
-        )}
+          )}
 
-        {/* ================================================================== */}
-        {/* TAB 6: ACTION OPTIONS CHECKLIST                                    */}
-        {/* ================================================================== */}
-        {activeTab === "actions" && (
-          <section aria-labelledby="actions-heading" className="space-y-6">
-            <div className="border-b border-line pb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-coral">
-                Strict Non-Directive Option Framing
-              </span>
-              <h2 id="actions-heading" className="font-serif text-2xl sm:text-3xl text-ink">
-                Recommended Procedural Considerations
-              </h2>
-              <p className="text-xs text-muted mt-1">
-                Options to consider based on document terms. Formulated strictly as options ("Consider...", "One option
-                is..."), never legal instructions.
-              </p>
-            </div>
-
+          {/* TAB 6: ACTION CHECKLIST */}
+          {activeTab === "actions" && (
             <div className="space-y-3">
               {[
                 {
@@ -1663,44 +1412,37 @@ LexNav provides document intelligence and consultation preparation tools for inf
                   priority: "Urgent",
                   title: "Consider requesting proof of service for the 15-day notice",
                   description:
-                    "One option is to verify whether the notice was served via personal delivery, substituted service, or certified mail according to statutory requirements in your jurisdiction.",
+                    "Verify whether the notice was served via personal delivery, substituted service, or certified mail according to statutory requirements in Maharashtra.",
                 },
                 {
                   id: "act-2",
                   priority: "Urgent",
                   title: "Consider preparing a written response letter disputing the sublet claim",
                   description:
-                    "You may want to draft a formal clarification demonstrating that the individual is a temporary guest rather than a permanent occupant or commercial subtenant.",
+                    "Draft a formal clarification demonstrating that the individual is a temporary guest rather than a permanent occupant or commercial subtenant.",
                 },
                 {
                   id: "act-3",
                   priority: "Medium",
                   title: "Consider assembling rent receipts and bank statements for the past 12 months",
                   description:
-                    "Compiling a clean record of timely payments can refute potential claims of non-financial default or habitual lateness.",
+                    "Compiling a clean record of timely payments can refute potential claims of non-financial default.",
                 },
                 {
                   id: "act-4",
                   priority: "Counsel Prep",
                   title: "Consider scheduling an attorney consultation before the 7-day objection window closes",
                   description:
-                    "Take the generated LexNav Consultation Brief to legal counsel to examine whether the unannounced entry and jury waiver clauses violate local statutory protections.",
+                    "Take the generated LexNav Brief to legal counsel to examine whether the notice to quit complies with the Maharashtra Rent Control Act.",
                 },
               ].map((action) => {
                 const isChecked = !!completedActions[action.id];
                 return (
                   <div
                     key={action.id}
-                    onClick={() =>
-                      setCompletedActions({
-                        ...completedActions,
-                        [action.id]: !isChecked,
-                      })
-                    }
+                    onClick={() => setCompletedActions({ ...completedActions, [action.id]: !isChecked })}
                     className={`flex items-start gap-4 rounded-xl border p-4 cursor-pointer transition-all ${
-                      isChecked
-                        ? "border-emerald-300 bg-emerald-50/40 opacity-75"
-                        : "border-line bg-paper hover:border-ink"
+                      isChecked ? "border-emerald-300 bg-emerald-50/40 opacity-75" : "border-line bg-paper hover:border-ink"
                     }`}
                   >
                     <input
@@ -1708,193 +1450,322 @@ LexNav provides document intelligence and consultation preparation tools for inf
                       checked={isChecked}
                       onChange={() => {}}
                       className="mt-1 size-4 rounded border-line text-coral focus:ring-coral cursor-pointer"
-                      aria-label={`Mark as considered: ${action.title}`}
                     />
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${
-                            action.priority === "Urgent"
-                              ? "bg-coral text-paper"
-                              : "bg-cream text-muted"
-                          }`}
-                        >
-                          {action.priority}
-                        </span>
-                        <h3 className={`text-sm font-bold ${isChecked ? "line-through text-muted" : "text-ink"}`}>
-                          {action.title}
-                        </h3>
-                      </div>
-                      <p className="mt-1 text-xs text-muted leading-relaxed">
-                        {action.description}
-                      </p>
+                      <span className="rounded-md bg-coral/10 text-coral px-2 py-0.5 text-[10px] font-bold uppercase">
+                        {action.priority}
+                      </span>
+                      <h4 className={`text-sm font-bold mt-1 ${isChecked ? "line-through text-muted" : "text-ink"}`}>
+                        {action.title}
+                      </h4>
+                      <p className="mt-1 text-xs text-muted">{action.description}</p>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </section>
-        )}
+          )}
 
-        {/* ================================================================== */}
-        {/* TAB 7: LAWYER-READY CONSULTATION BRIEF                             */}
-        {/* ================================================================== */}
-        {activeTab === "brief" && (
-          <section aria-labelledby="brief-heading" className="space-y-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-4">
-              <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-coral">
-                  Attorney Consultation Deliverable
-                </span>
-                <h2 id="brief-heading" className="font-serif text-2xl sm:text-3xl text-ink">
-                  Lawyer-Ready Matter Brief
-                </h2>
-                <p className="text-xs text-muted mt-1">
-                  1-page structured executive briefing designed to streamline your first 15 minutes with legal counsel.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCopyBrief}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-paper px-3 py-2 text-xs font-semibold text-ink hover:border-ink shadow-xs"
-                >
-                  {copiedBrief ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
-                  <span>{copiedBrief ? "Copied to Clipboard!" : "Copy Full Brief"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-4 py-2 text-xs font-semibold text-paper hover:bg-ink-soft shadow-xs"
-                >
-                  <Printer className="size-4" />
-                  <span>Print Brief</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Document Printable Brief */}
+          {/* TAB 7: LAWYER BRIEF */}
+          {activeTab === "brief" && (
             <article className="rounded-xl border border-line bg-paper p-6 sm:p-8 shadow-sm">
-              <header className="border-b-2 border-ink pb-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-serif text-2xl font-bold text-ink">
-                      CASE PREPARATION BRIEF: {currentDoc.name}
-                    </h3>
-                    <p className="text-xs font-semibold text-muted mt-1">
-                      Compiled via LexNav Intelligence Engine • Powered by Google Gemini 2.5 Flash
-                    </p>
-                  </div>
-                  <div className="text-right text-xs">
-                    <p className="font-bold text-ink">Date: September 26, 2026</p>
-                    <p className="text-muted">Jurisdiction: {jurisdiction}</p>
-                    <p className="text-coral font-semibold">Matter Urgency: {urgency.toUpperCase()}</p>
-                  </div>
+              <div className="flex justify-between items-start border-b-2 border-ink pb-4">
+                <div>
+                  <h3 className="font-serif text-2xl font-bold text-ink">LAWYER-READY CONSULTATION BRIEF</h3>
+                  <p className="text-xs text-muted mt-1">{currentDoc.name} • Generated via LexNav</p>
                 </div>
-              </header>
-
-              {/* Section 1: Situation */}
-              <div className="mt-6">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-2">
-                  1. Matter Summary & Client Role
-                </h4>
-                <p className="text-sm leading-relaxed text-ink/90 bg-cream/50 p-3 rounded-lg border border-line/60">
-                  Client is acting as <span className="font-semibold underline">{userRole.toUpperCase()}</span>.{" "}
-                  {currentDoc.summary}
-                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyBrief}
+                    className="rounded-lg border border-line bg-cream px-3 py-1.5 text-xs font-semibold hover:border-ink cursor-pointer flex items-center gap-1.5"
+                  >
+                    {copiedBrief ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+                    <span>{copiedBrief ? "Copied!" : "Copy Brief"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="rounded-lg bg-ink text-paper px-3 py-1.5 text-xs font-semibold hover:bg-ink-soft cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Printer className="size-3.5" />
+                    <span>Print</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Section 2: Flagged High-Risk Terms */}
-              <div className="mt-6">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-2">
-                  2. Identified High-Risk Terms Requiring Legal Opinion
-                </h4>
-                <div className="space-y-2 text-xs">
+              <div className="mt-6 space-y-5 text-xs">
+                <div>
+                  <h4 className="font-bold uppercase tracking-wider text-muted mb-1">1. Context & Roles</h4>
+                  <p className="bg-cream/50 p-3 rounded-lg border border-line/60">
+                    Client Role: <strong>{userRole.toUpperCase()}</strong> | Jurisdiction: <strong>{jurisdiction}</strong> | Urgency: <strong>{urgency.toUpperCase()}</strong>
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="font-bold uppercase tracking-wider text-muted mb-1">2. High-Risk Clauses Flagged</h4>
                   {currentDoc.clauses
                     .filter((c) => c.risk === "high")
-                    .map((clause) => (
-                      <div key={clause.id} className="rounded-md border border-coral/30 bg-coral/5 p-3">
-                        <span className="font-bold text-coral">
-                          {clause.section} — {clause.title}:
-                        </span>{" "}
-                        <span className="font-mono italic">“{clause.verbatimQuote}”</span>
-                        <p className="mt-1 font-semibold text-ink">
-                          Impact: {clause.plainEnglishSummary}
-                        </p>
+                    .map((c) => (
+                      <div key={c.id} className="rounded-md border border-coral/30 bg-coral/5 p-3 mb-2">
+                        <strong className="text-coral">{c.section} — {c.title}:</strong> “{c.verbatimQuote}”
                       </div>
                     ))}
                 </div>
+
+                <div>
+                  <h4 className="font-bold uppercase tracking-wider text-muted mb-1">3. Formulated Attorney Questions</h4>
+                  <ol className="list-decimal list-inside space-y-1.5 bg-cream/40 p-4 rounded-lg border border-line font-medium text-ink">
+                    <li>Is the 15-day notice period legally valid given the 30-day notice clause in the lease?</li>
+                    <li>Does the unannounced entry provision violate statutory quiet enjoyment in this jurisdiction?</li>
+                    <li>What legal threshold distinguishes an overnight guest from an unauthorized subtenant?</li>
+                    <li>Can the landlord legally forfeit the entire security deposit without an itemized statement?</li>
+                    <li>What emergency stay filing is required if an unlawful detainer action is filed?</li>
+                  </ol>
+                </div>
               </div>
 
-              {/* Section 3: Critical Dates */}
-              <div className="mt-6">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-2">
-                  3. Critical Timelines & Procedural Deadlines
-                </h4>
-                <ul className="divide-y divide-line/60 border border-line rounded-lg text-xs">
-                  {currentDoc.timeline.map((t) => (
-                    <li key={t.id} className="flex justify-between items-center p-3">
-                      <div>
-                        <span className="font-bold text-ink">{t.dateStr}</span>: {t.title}
-                        <p className="text-muted text-[11px]">{t.description}</p>
-                      </div>
-                      <span className="font-mono text-coral font-semibold">{t.daysRemaining}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Section 4: 5 Formulated Attorney Questions */}
-              <div className="mt-6">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-2">
-                  4. Formulated Questions to Discuss With Your Attorney
-                </h4>
-                <ol className="list-decimal list-inside space-y-2 text-xs font-medium text-ink bg-cream/40 p-4 rounded-lg border border-line">
-                  <li>
-                    Does the 15-day cure window in the notice override the 30-day default provision stated in Section 21
-                    of the underlying lease?
-                  </li>
-                  <li>
-                    Is the unannounced landlord right-of-entry clause in Section 12.4 enforceable under California Civil
-                    Code § 1954?
-                  </li>
-                  <li>
-                    What statutory threshold distinguishes an overnight guest from an unauthorized subtenant under local
-                    rent control ordinances?
-                  </li>
-                  <li>
-                    Can the landlord legally declare a summary forfeiture of the $5,700 deposit without presenting an
-                    itemized schedule of actual damages?
-                  </li>
-                  <li>
-                    What immediate emergency responsive pleading or stay of proceedings should be prepared if a summary
-                    unlawful detainer action is filed?
-                  </li>
-                </ol>
-              </div>
-
-              {/* Legal Disclaimer Inside Brief */}
-              <footer className="mt-8 border-t border-line pt-4 text-[11px] text-muted leading-relaxed">
-                <strong>LEGAL DISCLAIMER:</strong> This brief is generated automatically by LexNav for document
-                comprehension and consultation preparation purposes only. LexNav is not an attorney or law firm and does
-                not render formal legal opinions or advise on legal strategies. All analysis should be reviewed by a
-                licensed legal professional in your jurisdiction.
+              <footer className="mt-8 border-t border-line pt-4 text-[11px] text-muted">
+                <strong>Legal Disclaimer:</strong> LexNav provides legal document intelligence and consultation preparation tools for informational purposes only. It is not legal advice.
               </footer>
             </article>
-          </section>
-        )}
-      </div>
+          )}
+        </div>
+      </section>
 
       {/* -------------------------------------------------------------------- */}
-      {/* EVIDENCE CITATION MODAL / DRAWER                                     */}
+      {/* ORIGINAL 01 / SIMPLIFY FEATURE SECTION                               */}
+      {/* -------------------------------------------------------------------- */}
+      <section id="features" className="border-b border-line bg-cream/60 py-20">
+        <div className="mx-auto grid max-w-6xl gap-10 px-5 lg:grid-cols-2 lg:items-center">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">01 / Simplify</p>
+            <h2 className="mt-3 font-serif text-4xl tracking-tight text-ink">
+              Dense clauses, rewritten for humans.
+            </h2>
+            <p className="mt-4 max-w-md text-muted leading-relaxed">
+              LexNav keeps the legal effect, drops the fog, and shows what the document actually asks of you.
+            </p>
+          </div>
+          <div className="space-y-3 rounded-xl border border-line bg-paper p-6 shadow-xs">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">Original</p>
+            <p className="text-sm italic text-muted">
+              “The Tenant shall indemnify and hold harmless the Landlord from and against any and all claims…”
+            </p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-coral">Simplified</p>
+            <p className="text-sm text-ink font-medium">
+              You agree to cover the landlord if someone makes a claim because of something you did.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* ORIGINAL 02 / RISK RADAR FEATURE SECTION                             */}
+      {/* -------------------------------------------------------------------- */}
+      <section className="mx-auto max-w-6xl px-5 py-20">
+        <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
+          <div className="order-2 space-y-3 lg:order-1">
+            <RiskRow
+              tone="high"
+              title="Liability cap"
+              detail="Recovery may be limited — confirm the number in your copy."
+            />
+            <RiskRow
+              tone="mid"
+              title="Response window"
+              detail="A short deadline to reply is a common pressure point."
+            />
+            <RiskRow
+              tone="ok"
+              title="Termination language"
+              detail="Look for how much notice you must give to leave."
+            />
+          </div>
+          <div className="order-1 lg:order-2">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">02 / Risk radar</p>
+            <h2 className="mt-3 font-serif text-4xl tracking-tight text-ink">
+              Obligations, deadlines, and gaps — in one pass.
+            </h2>
+            <p className="mt-4 max-w-md text-muted leading-relaxed">
+              Flags are informational. They help you know what to ask a lawyer, not what to sign.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* ORIGINAL DARK NAVY 4-CARD USE CASES SECTION                          */}
+      {/* -------------------------------------------------------------------- */}
+      <section id="how" className="border-y border-line bg-ink py-20 text-paper">
+        <div className="mx-auto max-w-6xl px-5">
+          <h2 className="max-w-xl font-serif text-4xl tracking-tight">Built for real situations, not generic chat.</h2>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div
+              onClick={() => {
+                setActiveTab("compare");
+                const el = document.getElementById("dashboard");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="cursor-pointer"
+            >
+              <UseCard
+                icon={<GitCompare className="size-5" />}
+                title="Compare"
+                body="Side-by-side differences in obligations, fees, and exits."
+              />
+            </div>
+            <div
+              onClick={() => {
+                setActiveTab("qa");
+                const el = document.getElementById("dashboard");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="cursor-pointer"
+            >
+              <UseCard
+                icon={<FileText className="size-5" />}
+                title="Cite answers"
+                body="Questions answered only from the text you provided."
+              />
+            </div>
+            <div
+              onClick={() => {
+                setActiveTab("brief");
+                const el = document.getElementById("dashboard");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="cursor-pointer"
+            >
+              <UseCard
+                icon={<Scale className="size-5" />}
+                title="Lawyer brief"
+                body="A one-page summary and questions to take to counsel."
+              />
+            </div>
+            <div
+              onClick={() => {
+                setActiveTab("actions");
+                const el = document.getElementById("dashboard");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="cursor-pointer"
+            >
+              <UseCard
+                icon={<ListChecks className="size-5" />}
+                title="Next steps"
+                body="Checklists framed as options — never instructions."
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* ORIGINAL PRICING SECTION                                             */}
+      {/* -------------------------------------------------------------------- */}
+      <section id="pricing" className="mx-auto max-w-6xl px-5 py-20">
+        <h2 className="font-serif text-4xl tracking-tight text-ink">Plans that stay honest.</h2>
+        <p className="mt-3 max-w-lg text-muted">
+          Start with a session demo. Upgrade when you need unlimited analyses.
+        </p>
+        <div className="mt-10 grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-line bg-cream p-8">
+            <p className="text-sm font-semibold text-muted">Starter</p>
+            <p className="mt-2 font-serif text-5xl">
+              $0<span className="text-lg text-muted">/mo</span>
+            </p>
+            <ul className="mt-6 space-y-2 text-sm text-muted">
+              <li>5 analyses / month</li>
+              <li>Simplification and risk flags</li>
+              <li>Session-only processing</li>
+            </ul>
+            <a
+              href="#dashboard"
+              className="mt-8 inline-flex rounded-full border border-line bg-paper px-5 py-2 text-sm font-semibold text-ink hover:border-ink transition-colors"
+            >
+              Get started
+            </a>
+          </div>
+          <div className="rounded-xl bg-ink p-8 text-paper shadow-sm">
+            <p className="text-sm font-semibold text-cream/70">Pro</p>
+            <p className="mt-2 font-serif text-5xl">
+              $19<span className="text-lg text-cream/60">/mo</span>
+            </p>
+            <ul className="mt-6 space-y-2 text-sm text-cream/80">
+              <li>Unlimited analyses</li>
+              <li>Document comparison</li>
+              <li>Lawyer-ready brief export</li>
+            </ul>
+            <a
+              href="#dashboard"
+              className="mt-8 inline-flex rounded-full bg-coral px-5 py-2 text-sm font-semibold text-paper hover:opacity-90 transition-opacity"
+            >
+              Try Pro flow
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* ORIGINAL FAQ SECTION                                                 */}
+      {/* -------------------------------------------------------------------- */}
+      <section id="faq" className="border-t border-line px-5 py-20">
+        <div className="mx-auto flex max-w-6xl flex-col gap-10 lg:flex-row">
+          <h2 className="font-serif text-4xl tracking-tight text-ink lg:w-1/3">
+            Frequently asked questions
+          </h2>
+          <div className="flex-1 divide-y divide-line">
+            {faqs.map((item, i) => {
+              const open = openFaq === i;
+              return (
+                <div key={item.q}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-4 py-4 text-left cursor-pointer"
+                    onClick={() => setOpenFaq(open ? null : i)}
+                    aria-expanded={open}
+                  >
+                    <span className="text-lg text-ink font-medium">{item.q}</span>
+                    <span className="text-muted text-xl">{open ? "–" : "+"}</span>
+                  </button>
+                  {open ? (
+                    <p className="pb-4 text-sm leading-relaxed text-muted">{item.a}</p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* ORIGINAL BOTTOM CTA                                                  */}
+      {/* -------------------------------------------------------------------- */}
+      <section className="px-5 pb-20">
+        <div className="mx-auto max-w-4xl rounded-xl bg-ink px-8 py-16 text-center text-paper shadow-md">
+          <h2 className="font-serif text-4xl tracking-tight">
+            Ready to find true north in your documents?
+          </h2>
+          <p className="mx-auto mt-4 max-w-lg text-cream/70 text-sm leading-relaxed">
+            Information and assistance only. A lawyer still owns the advice.
+          </p>
+          <a
+            href="#dashboard"
+            className="mt-8 inline-flex rounded-full bg-coral px-6 py-3 text-sm font-semibold text-paper hover:opacity-90 transition-opacity shadow-sm"
+          >
+            Launch LexNav
+          </a>
+        </div>
+      </section>
+
+      {/* -------------------------------------------------------------------- */}
+      {/* EVIDENCE CITATION MODAL                                              */}
       {/* -------------------------------------------------------------------- */}
       {evidenceModalItem && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="evidence-dialog-title"
           className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4 backdrop-blur-xs"
         >
           <div className="w-full max-w-2xl rounded-2xl border border-line bg-paper p-6 shadow-2xl animate-in fade-in-50 zoom-in-95">
@@ -1903,7 +1774,7 @@ LexNav provides document intelligence and consultation preparation tools for inf
                 <span className="text-xs font-bold uppercase tracking-wider text-coral">
                   Verified Source Grounding
                 </span>
-                <h3 id="evidence-dialog-title" className="font-serif text-xl font-bold text-ink">
+                <h3 className="font-serif text-xl font-bold text-ink">
                   {evidenceModalItem.title}
                 </h3>
                 <p className="text-xs text-muted font-mono mt-0.5">
@@ -1913,7 +1784,7 @@ LexNav provides document intelligence and consultation preparation tools for inf
               <button
                 type="button"
                 onClick={() => setEvidenceModalItem(null)}
-                className="rounded-full p-1.5 text-muted hover:bg-cream hover:text-ink"
+                className="rounded-full p-1.5 text-muted hover:bg-cream hover:text-ink cursor-pointer"
                 aria-label="Close evidence modal"
               >
                 <X className="size-5" />
@@ -1931,9 +1802,7 @@ LexNav provides document intelligence and consultation preparation tools for inf
               </div>
               <div className="mt-3 flex items-center gap-2 text-xs text-muted">
                 <CheckCircle2 className="size-4 text-emerald-600" />
-                <span>
-                  Exact match verified against OCR stream · Quoted under LexNav Quotation Exemption Rules
-                </span>
+                <span>Exact match verified against OCR stream · Quoted under Quotation Exemption Rules</span>
               </div>
             </div>
 
@@ -1941,7 +1810,7 @@ LexNav provides document intelligence and consultation preparation tools for inf
               <button
                 type="button"
                 onClick={() => setEvidenceModalItem(null)}
-                className="rounded-lg bg-ink px-4 py-2 text-xs font-semibold text-paper hover:bg-ink-soft"
+                className="rounded-lg bg-ink px-4 py-2 text-xs font-semibold text-paper hover:bg-ink-soft cursor-pointer"
               >
                 Close Evidence
               </button>
@@ -1951,27 +1820,54 @@ LexNav provides document intelligence and consultation preparation tools for inf
       )}
 
       {/* -------------------------------------------------------------------- */}
-      {/* PERSISTENT FOOTER WITH MANDATORY LEGAL DISCLAIMER                    */}
+      {/* ORIGINAL FOOTER                                                      */}
       {/* -------------------------------------------------------------------- */}
-      <footer className="mt-20 border-t border-line bg-cream/40 px-4 py-8 sm:px-6">
-        <div className="mx-auto max-w-7xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <LexNavMark className="size-8" />
-            <div>
-              <p className="text-sm font-bold text-ink">LexNav Legal Intelligence Platform</p>
-              <p className="text-xs text-muted">Powered Natively by Google Gemini 2.5 Flash & Google Cloud</p>
-            </div>
-          </div>
-
-          <div className="max-w-xl text-right">
-            <p className="text-xs text-muted leading-relaxed">
-              <strong>Mandatory Legal Notice:</strong> LexNav provides legal document intelligence and consultation
-              preparation tools for informational purposes only. It is not legal advice. Consult a qualified legal
-              professional for advice regarding your specific situation.
-            </p>
-          </div>
+      <footer className="border-t border-line px-5 py-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <LexNavWordmark className="origin-left scale-90" />
+          <p className="text-sm text-muted">© 2026 LexNav · Not legal advice</p>
         </div>
       </footer>
     </main>
+  );
+}
+
+function UseCard({
+  icon,
+  title,
+  body,
+}: {
+  icon: ReactNode;
+  title: string;
+  body: string;
+}) {
+  return (
+    <article className="rounded-lg border border-paper/15 bg-ink-soft p-5 transition-transform hover:-translate-y-0.5">
+      <div className="mb-4 text-coral">{icon}</div>
+      <h3 className="font-semibold text-paper">{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed text-cream/70">{body}</p>
+    </article>
+  );
+}
+
+function RiskRow({
+  tone,
+  title,
+  detail,
+}: {
+  tone: "high" | "mid" | "ok";
+  title: string;
+  detail: string;
+}) {
+  const color =
+    tone === "high" ? "text-coral" : tone === "mid" ? "text-ink" : "text-muted";
+  return (
+    <div className="flex gap-3 rounded-lg border border-line bg-cream px-4 py-3">
+      <ShieldAlert className={`mt-0.5 size-4 shrink-0 ${color}`} />
+      <div>
+        <p className="text-sm font-semibold text-ink">{title}</p>
+        <p className="text-sm text-muted">{detail}</p>
+      </div>
+    </div>
   );
 }
