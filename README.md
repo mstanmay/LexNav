@@ -161,5 +161,14 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
-## 10. Legal Safety Disclaimer
+## 10. Demo Video & Submission Guide
+A complete, timed 3-minute video walkthrough guide and narration script adhering to the hackathon criteria is provided in [docs/video-submission.md](docs/video-submission.md).
+
+- **Submission Video URL**: [docs/video-submission.md](docs/video-submission.md)
+- **Duration**: ~3:30 (strictly under 4 minutes)
+- **Features Demonstrated**: Context Onboarding, Live Prompt Entry, Google Gemini & Document AI in action, Risk Radar with Quotation Protection, Chronological Timeline, Multi-Doc Discrepancy Matrix, Grounded Q&A with negative test, and Lawyer-Ready Brief generation.
+
+---
+
+## 11. Legal Safety Disclaimer
 LexNav provides legal document intelligence and meeting preparation tools for informational purposes only. LexNav is not an attorney, law firm, or legal service, and does not provide legal advice, legal opinions, or court outcome predictions. Consult a licensed attorney in your jurisdiction for advice regarding your legal rights and obligations.
